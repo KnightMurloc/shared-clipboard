@@ -144,7 +144,8 @@ int main(int argc, char** argv)
 
     load_config(config_file);
 
-    signal(15,signalHandle);
+    signal(SIGTERM,signalHandle);
+	signal(SIGINT,signalHandle);
 
     notify_init("shared clipboard");
     gtk_init(&argc, &argv);

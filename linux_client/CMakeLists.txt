@@ -16,7 +16,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../socket-cpp socket-cpp)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../json/ json)
 
 if(NOTIFY)
-    find_library(NOTIFY notify)
+    find_library(NOTIFY_LIBRARY notify)
     add_definitions(-DNOTIFY)
 endif()
 
@@ -24,4 +24,8 @@ include_directories(../socket-cpp/Socket)
 include_directories(../json/include)
 
 add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h)
-target_link_libraries(${PROJECT_NAME} ${GTK3_LIBRARIES} pthread socket ${NOTIFY})
+target_link_libraries(${PROJECT_NAME} ${GTK3_LIBRARIES} pthread socket ${NOTIFY_LIBRARY})
+
+if(NOTIFY)
+	target_link_libraries(${PROJECT_NAME} ${NOTIFY_LIBRARY})
+endif()

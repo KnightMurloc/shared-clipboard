@@ -36,7 +36,11 @@ static std::string* wstring_to_utf8 (const std::wstring* str)
 void listenServer(){
     while(true){
         int size;
-        client->Receive((char*) &size, sizeof(int));
+        int ret = client->Receive((char*) &size, sizeof(int));
+
+		if(ret == 0){
+			break;
+		}
 
         if(size == -1){
             break;
