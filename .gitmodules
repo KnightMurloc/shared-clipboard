@@ -1,0 +1,6 @@
+[submodule "socket-cpp"]
+	path = socket-cpp
+	url = https://github.com/embeddedmz/socket-cpp
+[submodule "json"]
+	path = json
+	url = https://github.com/nlohmann/json
