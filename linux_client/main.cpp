@@ -56,7 +56,7 @@ gboolean set_clipboard(std::string* msg){
     isSet = true;
     gtk_clipboard_set_text(clipboard, msg->data(), -1);
 
-#ifdef DNOTIFY
+#ifdef NOTIFY
 
     std::string short_msg(23, '.');
     for (int i = 0; i < 20 && i < msg->length(); ++i) {
