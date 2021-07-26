@@ -15,6 +15,7 @@
 #include <commctrl.h>
 #include <strsafe.h>
 #include <unistd.h>
+#include <exception>
 #include <cstdlib>
 
 UINT const WMAPP_NOTIFYCALLBACK = WM_APP + 1;
@@ -56,6 +57,7 @@ int CALLBACK WinMain(
         _In_ LPSTR     lpCmdLine,
         _In_ int       nCmdShow
 ){
+
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
@@ -78,14 +80,19 @@ int CALLBACK WinMain(
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, IDI_APPLICATION);
 
-    if (!RegisterClassEx(&wcex))
-    {
-        MessageBox(NULL,
-                   _T("Call to RegisterClassEx failed!"),
-                   _T(""),
-                   0);
+    try {
 
-        return 1;
+
+        if (!RegisterClassEx(&wcex)) {
+            MessageBox(NULL,
+                       _T("Call to RegisterClassEx failed!"),
+                       _T(""),
+                       0);
+
+            return 1;
+        }
+    }catch(exception& e){
+        wcout << e.what() << endl;
     }
 
     HWND hWnd = CreateWindowEx(0, szWindowClass, _T("s_clipboard"),
@@ -105,67 +112,73 @@ int CALLBACK WinMain(
 
     init_client(clients[0].ip,clients[0].port,setClipboard);
     init_server(port, setClipboard);
-
-    // Main message loop:
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0))
-    {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+    // Main message loop:
+    try {
+        while (GetMessage(&msg, NULL, 0, 0)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }catch(exception& e){
+        wcout << e.what() << endl;
     }
-
     return (int) msg.wParam;
 }
 
 void read_config(){
-    ifstream stream("config.json");
+    try {
+        ifstream stream("config.json");
 
-    json config;
+        json config;
 
-    stream >> config;
+        stream >> config;
 
-    port = config["port"];
+        port = config["port"];
 
-    wcout << port.data() << endl;
+        wcout << port.data() << endl;
 
-    json clients_json = config["clients"];
+        json clients_json = config["clients"];
 
-    for(json& client_json : clients_json){
+        for (json &client_json : clients_json) {
 
-        Client client;
+            Client client;
 
-        client.name = client_json["name"];
-        wcout << client.name.data() << endl;
+            client.name = client_json["name"];
+            wcout << client.name.data() << endl;
 
-        client.ip = client_json["ip"];
+            client.ip = client_json["ip"];
 
-        wcout << client.ip.data() << endl;
+            wcout << client.ip.data() << endl;
 
-        client.port = client_json["port"];
+            client.port = client_json["port"];
 
-        wcout << client.port.data() << endl;
+            wcout << client.port.data() << endl;
 
-        clients.push_back(client);
+            clients.push_back(client);
+        }
+    }catch(exception& e){
+        wcout << e.what() << endl;
     }
 }
 
 std::wstring* GetClipboardText()
 {
+    wstring* text = nullptr;
     OpenClipboard(nullptr);
+    if(OpenClipboard(nullptr)) { ;
+        HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+        wcout << hData << endl;
 
-    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+        void* tmp = GlobalLock(hData);
 
+        char* pszText = static_cast<char*>(tmp);
 
-    void* tmp = GlobalLock(hData);
+        text = new std::wstring((wchar_t*) pszText);
 
-    char * pszText = static_cast<char*>(tmp);
+        GlobalUnlock(hData);
 
-    auto* text = new std::wstring((wchar_t *) pszText);
-
-    GlobalUnlock( hData );
-
+    }
     CloseClipboard();
-
     return text;
 }
 
@@ -173,7 +186,7 @@ void setClipboard(wstring* msg){
     isSet = true;
     OpenClipboard(nullptr);
     EmptyClipboard();
-    HGLOBAL  clipbuffer = GlobalAlloc(GMEM_DDESHARE, (msg->size()*2)+1);
+    HGLOBAL clipbuffer = GlobalAlloc(GMEM_DDESHARE, (msg->size()*2)+1);
     auto* buffer = (wchar_t *)GlobalLock(clipbuffer);
 
     memcpy(buffer,msg->data(),msg->size()*2);
@@ -187,6 +200,11 @@ void setClipboard(wstring* msg){
 }
 
 void sendData(std::wstring* msg){
+
+    if(msg == nullptr){
+        return;
+    }
+
     if(client_is_connected()){
         sendData_client(msg);
     }
@@ -202,12 +220,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 
     if(message == WM_DRAWCLIPBOARD){
+        wcout << L"test" << endl;
         if(isSet){
             isSet = false;
             return 0;
         }
 
         wstring* msg = GetClipboardText();
+
+        wcout << msg->data() << endl;
 
         sendData(msg);
     }else{

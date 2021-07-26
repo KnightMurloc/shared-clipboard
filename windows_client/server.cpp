@@ -57,11 +57,7 @@ void listenClients(){
     while(true){
         int size;
 
-        int ret = server->Receive(client,(char*) &size, sizeof(int));
-
-		if(ret == 0){
-			break;
-		}
+        server->Receive(client,(char*) &size, sizeof(int));
 
         if(size == -1){
             break;
