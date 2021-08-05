@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.10)
 project(s_clipboard)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -11,5 +11,5 @@ include_directories(../json/include)
 
 #set(CMAKE_CXX_FLAGS "-mwindows")
 
-add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h)
+add_executable(${PROJECT_NAME} WIN32 main.cpp server.cpp server.h client.cpp client.h)
 target_link_libraries(${PROJECT_NAME} socket nlohmann_json)

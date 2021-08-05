@@ -9,7 +9,7 @@ linux dependencies:
 
 default config path:
   linux: /home/${USER}/.config/shared clipboard/config.json
-  windows: in same folder with executable
+  windows: C:\Users\${USER}\AppData\Roaming\s_clipboard\config.json
 
 config file example (current support only one client):
 {

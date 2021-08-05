@@ -7,16 +7,18 @@
 #include <winuser.h>
 #include "server.h"
 #include "client.h"
-#include <signal.h>
+#include <csignal>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <vector>
 #include <shellapi.h>
 #include <commctrl.h>
 #include <strsafe.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <exception>
 #include <cstdlib>
+#include <future>
+#include <shlobj.h>
 
 UINT const WMAPP_NOTIFYCALLBACK = WM_APP + 1;
 UINT const WMAPP_HIDEFLYOUT     = WM_APP + 2;
@@ -36,9 +38,11 @@ static TCHAR szWindowClass[] = _T("DesktopApp");
 static string port;
 static vector<Client> clients;
 
-void read_config();
-
+void read_config(wstring& path);
+void show_notify(std::wstring* msg);
+wstring get_default_config_path();
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+HWND hwnd;
 
 bool isSet = false;
 
@@ -61,7 +65,7 @@ int CALLBACK WinMain(
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    read_config();
+
 
     setlocale(LC_ALL, "");
 
@@ -95,10 +99,10 @@ int CALLBACK WinMain(
         wcout << e.what() << endl;
     }
 
-    HWND hWnd = CreateWindowEx(0, szWindowClass, _T("s_clipboard"),
+    hwnd = CreateWindowEx(0, szWindowClass, _T("s_clipboard"),
                                0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
 
-    if (!hWnd)
+    if (!hwnd)
     {
         MessageBox(NULL,
                    _T("Call to CreateWindow failed!"),
@@ -108,7 +112,13 @@ int CALLBACK WinMain(
         return 1;
     }
 
-    SetClipboardViewer(hWnd);
+    wstring config = get_default_config_path();
+
+    read_config(config);
+
+    wcout << config << endl;
+
+    SetClipboardViewer(hwnd);
 
     init_client(clients[0].ip,clients[0].port,setClipboard);
     init_server(port, setClipboard);
@@ -125,9 +135,49 @@ int CALLBACK WinMain(
     return (int) msg.wParam;
 }
 
-void read_config(){
+void show_notify(std::wstring* msg){
+    std::async([](HWND hwnd, std::wstring* msg){
+
+        NOTIFYICONDATAW icon = { };
+        memset(&icon,0, sizeof(icon));
+        std::wstring clientTmp(clients[0].name.begin(), clients[0].name.end());
+
+        icon.cbSize = sizeof(icon);
+        icon.hWnd = hwnd;
+        icon.uVersion = NOTIFYICON_VERSION_4;
+        icon.uCallbackMessage = WM_USER;
+        icon.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+        icon.uFlags = NIF_MESSAGE | NIF_INFO;
+        Shell_NotifyIconW(NIM_ADD, &icon);
+        memcpy(icon.szInfo,msg->data(),msg->size() * 2 + 1);
+        memcpy(icon.szInfoTitle,clientTmp.data(),clientTmp.size() * 2 + 1);
+        Shell_NotifyIconW( NIM_MODIFY, &icon );
+
+//        sleep(3);
+        Sleep(3000);
+
+        Shell_NotifyIconW(NIM_DELETE, &icon);
+    },hwnd, msg);
+}
+
+wstring get_default_config_path(){
+    wstring appDataPath(MAX_PATH, '\0');
+
+    SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appDataPath.data());
+
+    wcout << MAX_PATH << endl;
+
+    wstring tmp = L"\\s_clipboard\\config.json";
+
+    memcpy(appDataPath.data() + wcslen(appDataPath.data()),tmp.data(), (size_t) tmp.size() * 2);
+
+    return appDataPath;
+}
+
+void read_config(wstring& path){
     try {
-        ifstream stream("config.json");
+
+        ifstream stream(path);
 
         json config;
 
@@ -167,7 +217,10 @@ std::wstring* GetClipboardText()
     OpenClipboard(nullptr);
     if(OpenClipboard(nullptr)) { ;
         HANDLE hData = GetClipboardData(CF_UNICODETEXT);
-        wcout << hData << endl;
+        if(hData == nullptr){
+            CloseClipboard();
+            return nullptr;
+        }
 
         void* tmp = GlobalLock(hData);
 
@@ -183,6 +236,9 @@ std::wstring* GetClipboardText()
 }
 
 void setClipboard(wstring* msg){
+
+    show_notify(msg);
+
     isSet = true;
     OpenClipboard(nullptr);
     EmptyClipboard();
@@ -227,8 +283,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
 
         wstring* msg = GetClipboardText();
-
-        wcout << msg->data() << endl;
 
         sendData(msg);
     }else{
