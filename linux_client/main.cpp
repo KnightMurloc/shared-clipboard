@@ -11,6 +11,8 @@
 #include <fstream>
 #include <libnotify/notify.h>
 
+#define NOTIFY_MSG_LEN 256
+
 using namespace nlohmann;
 
 typedef struct {
@@ -57,13 +59,15 @@ gboolean set_clipboard(std::string* msg){
     gtk_clipboard_set_text(clipboard, msg->data(), -1);
 
 #ifdef NOTIFY
+    NotifyNotification *notify;
 
-    std::string short_msg(23, '.');
-    for (int i = 0; i < 20 && i < msg->length(); ++i) {
-        short_msg[i] = (*msg)[i];
+    if(msg->length() > NOTIFY_MSG_LEN){
+        std::string short_msg(NOTIFY_MSG_LEN, '.');
+        memcpy(short_msg.data(),msg->data(),NOTIFY_MSG_LEN - 3);
+        notify = notify_notification_new(clients[0].name.data(), short_msg.data(), "clipit-trayicon");
+    }else{
+        notify = notify_notification_new(clients[0].name.data(), msg->data(),"clipit-trayicon");
     }
-
-    NotifyNotification* notify = notify_notification_new(clients[0].name.data(), short_msg.data(),"clipit-trayicon");
 
     GError* err = nullptr;
 
