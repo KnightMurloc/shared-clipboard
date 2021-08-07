@@ -20,10 +20,6 @@
 #include <future>
 #include <shlobj.h>
 
-UINT const WMAPP_NOTIFYCALLBACK = WM_APP + 1;
-UINT const WMAPP_HIDEFLYOUT     = WM_APP + 2;
-
-UINT_PTR const HIDEFLYOUT_TIMER_ID = 1;
 
 using namespace std;
 using namespace nlohmann;
@@ -146,14 +142,31 @@ void show_notify(std::wstring* msg){
         icon.hWnd = hwnd;
         icon.uVersion = NOTIFYICON_VERSION_4;
         icon.uCallbackMessage = WM_USER;
-        icon.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
         icon.uFlags = NIF_MESSAGE | NIF_INFO;
         Shell_NotifyIconW(NIM_ADD, &icon);
-        memcpy(icon.szInfo,msg->data(),msg->size() * 2 + 1);
-        memcpy(icon.szInfoTitle,clientTmp.data(),clientTmp.size() * 2 + 1);
+        
+        if(msg->length() > sizeof(icon.szInfo) / sizeof(WCHAR)){
+            memcpy(icon.szInfo,msg->data(), sizeof(icon.szInfo));
+            size_t last = sizeof(icon.szInfo) / sizeof(WCHAR) - 1;
+            icon.szInfo[last] = L'.';
+            icon.szInfo[last - 1] = L'.';
+            icon.szInfo[last - 2] = L'.';
+        }else{
+            memcpy(icon.szInfo,msg->data(),msg->size() * 2 + 1);
+        }
+
+        if(clientTmp.length() > sizeof(icon.szInfoTitle) / sizeof(WCHAR)){
+            memcpy(icon.szInfoTitle,clientTmp.data(), sizeof(icon.szInfoTitle));
+            size_t last = sizeof(icon.szInfoTitle) / sizeof(WCHAR) - 1;
+            icon.szInfoTitle[last] = L'.';
+            icon.szInfoTitle[last - 1] = L'.';
+            icon.szInfoTitle[last - 2] = L'.';
+        }else{
+            memcpy(icon.szInfoTitle,clientTmp.data(),clientTmp.size() * 2 + 1);
+        }
+
         Shell_NotifyIconW( NIM_MODIFY, &icon );
 
-//        sleep(3);
         Sleep(3000);
 
         Shell_NotifyIconW(NIM_DELETE, &icon);
@@ -223,7 +236,9 @@ std::wstring* GetClipboardText()
         }
 
         void* tmp = GlobalLock(hData);
-
+        if(tmp == nullptr){
+            goto end;
+        }
         char* pszText = static_cast<char*>(tmp);
 
         text = new std::wstring((wchar_t*) pszText);
@@ -231,25 +246,29 @@ std::wstring* GetClipboardText()
         GlobalUnlock(hData);
 
     }
+    end:
     CloseClipboard();
     return text;
 }
 
 void setClipboard(wstring* msg){
-
     show_notify(msg);
 
-    isSet = true;
-    OpenClipboard(nullptr);
-    EmptyClipboard();
-    HGLOBAL clipbuffer = GlobalAlloc(GMEM_DDESHARE, (msg->size()*2)+1);
-    auto* buffer = (wchar_t *)GlobalLock(clipbuffer);
+    if(OpenClipboard(nullptr)) {
+        isSet = true;
 
-    memcpy(buffer,msg->data(),msg->size()*2);
-    GlobalUnlock(clipbuffer);
+        EmptyClipboard();
+        HGLOBAL clipbuffer = GlobalAlloc(GMEM_DDESHARE, (msg->size() * 2) + 1);
+        auto* buffer = (wchar_t*) GlobalLock(clipbuffer);
+        if(buffer == nullptr){
+            goto end;
+        }
+        memcpy(buffer, msg->data(), msg->size() * 2);
+        GlobalUnlock(clipbuffer);
 
-    SetClipboardData(CF_UNICODETEXT,clipbuffer);
-
+        SetClipboardData(CF_UNICODETEXT, clipbuffer);
+    }
+    end:
     CloseClipboard();
 
     delete msg;
