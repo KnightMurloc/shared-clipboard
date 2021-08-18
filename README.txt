@@ -4,7 +4,7 @@ shared clipboard between PC.
 warning: the data is currently being transmitted without encryption.
 
 linux dependencies:
-  gtk-3
+  gtk-4
   libnotify (optional)
 
 default config path:
