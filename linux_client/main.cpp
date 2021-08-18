@@ -1,5 +1,6 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
+#include <string>
 #include <thread>
 #include <iostream>
 #include "server.h"
@@ -21,7 +22,7 @@ typedef struct {
     std::string port;
 }Client;
 
-GtkClipboard *clipboard;
+GdkClipboard *clipboard;
 bool isSet = false;
 
 std::string port;
@@ -39,24 +40,39 @@ void signalHandle(int sig){
     exit(sig);
 }
 
-void wait_text(){
+void wait_text(GdkClipboard* clipboard, gpointer userdata){
 
     if(isSet){
         isSet = false;
         return;
     }
 
-    gchar* msg = gtk_clipboard_wait_for_text(clipboard);
-    printf("%s\n",msg);
+    GdkContentFormats* format = gdk_clipboard_get_formats(clipboard);
 
-    auto* s_msg = new std::string(msg);
+    const GType* type = gdk_content_formats_get_gtypes(format, nullptr); 
 
-    sendData(s_msg);
+    if(type == nullptr || type[0] != G_TYPE_STRING){
+        return;
+    }
+
+    gdk_clipboard_read_text_async(clipboard, nullptr, [](GObject* source_object, GAsyncResult* res, gpointer user_data){
+            GError* err = nullptr;
+            char* msg = gdk_clipboard_read_text_finish((GdkClipboard*) source_object, res,&err);
+
+            if(msg == nullptr){
+                return;
+            }
+
+            std::cout << msg << std::endl;
+            auto* s_msg = new std::string(msg);
+            sendData(s_msg);
+            }, nullptr);
+
 }
 gboolean set_clipboard(std::string* msg){
 
     isSet = true;
-    gtk_clipboard_set_text(clipboard, msg->data(), -1);
+    gdk_clipboard_set_text(clipboard, msg->data());
 
 #ifdef NOTIFY
     NotifyNotification *notify;
@@ -152,16 +168,19 @@ int main(int argc, char** argv)
 	signal(SIGINT,signalHandle);
 
     notify_init("shared clipboard");
-    gtk_init(&argc, &argv);
+    gtk_init();
+    GMainLoop* loop = g_main_loop_new (NULL, FALSE);
 
-    clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    GdkDisplay* display = gdk_display_get_default();
+
+    clipboard = gdk_display_get_clipboard(display);    
 
     init_client(clients[0].ip,clients[0].port,callback);
     init_server(port, callback);
 
-    g_signal_connect(clipboard,"owner-change",wait_text,NULL);
+    g_signal_connect(clipboard,"changed",G_CALLBACK(wait_text),NULL);
 
-    gtk_main();
+    g_main_loop_run(loop);
 
     return 0;
 }
