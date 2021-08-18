@@ -5,10 +5,10 @@ set(NOTIFY on)
 
 
 find_package(PkgConfig REQUIRED)
-PKG_CHECK_MODULES(GTK3 REQUIRED gtk+-3.0)
-INCLUDE_DIRECTORIES(${GTK3_INCLUDE_DIRS})
-LINK_DIRECTORIES(${GTK3_LIBRARY_DIRS})
-ADD_DEFINITIONS(${GTK3_CFLAGS_OTHER})
+PKG_CHECK_MODULES(GTK4 REQUIRED gtk4)
+INCLUDE_DIRECTORIES(${GTK4_INCLUDE_DIRS})
+LINK_DIRECTORIES(${GTK4_LIBRARY_DIRS})
+ADD_DEFINITIONS(${GTK4_CFLAGS_OTHER})
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -24,7 +24,7 @@ include_directories(../socket-cpp/Socket)
 include_directories(../json/include)
 
 add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h)
-target_link_libraries(${PROJECT_NAME} ${GTK3_LIBRARIES} pthread socket ${NOTIFY_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${GTK4_LIBRARIES} pthread socket ${NOTIFY_LIBRARY})
 
 if(NOTIFY)
 	target_link_libraries(${PROJECT_NAME} ${NOTIFY_LIBRARY})
