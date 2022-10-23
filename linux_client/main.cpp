@@ -1,5 +1,3 @@
-#include <gdk/gdk.h>
-#include <gtk/gtk.h>
 #include <string>
 #include <thread>
 #include <iostream>
@@ -10,7 +8,10 @@
 #include <vector>
 #include <pwd.h>
 #include <fstream>
-#include <libnotify/notify.h>
+#ifdef NOTIFY
+#include <gio/gio.h>
+#endif
+#include "clipboard.h"
 
 #define NOTIFY_MSG_LEN 256
 
@@ -22,14 +23,12 @@ typedef struct {
     std::string port;
 }Client;
 
-GdkClipboard *clipboard;
-bool isSet = false;
-bool wait_lock = false;
-
 std::string port;
 std::vector<Client> clients;
-
-void sendData(std::string* msg);
+#ifdef NOTIFY
+GApplication* app;
+#endif
+void sendData(std::string& msg);
 
 void signalHandle(int sig){
 
@@ -38,70 +37,36 @@ void signalHandle(int sig){
     disconnect_client();
     disconnect_server();
 
-    exit(sig);
-}
-
-void wait_text(GdkClipboard* clipboard, gpointer userdata){
-    GdkContentFormats* format = gdk_clipboard_get_formats(clipboard);
-
-    const GType* type = gdk_content_formats_get_gtypes(format, nullptr); 
-
-    if(type == nullptr || type[0] != G_TYPE_STRING){
-        return;
-    }
-
-    if(isSet){
-        isSet = false;
-        return;
-    }
-
-    if(wait_lock){
-        wait_lock = false;
-        return;
-    }
-    wait_lock = true;
-
-    gdk_clipboard_read_text_async(clipboard, nullptr, [](GObject* source_object, GAsyncResult* res, gpointer user_data){
-            GError* err = nullptr;
-            char* msg = gdk_clipboard_read_text_finish((GdkClipboard*) source_object, res,&err);
-
-            if(msg == nullptr){
-                return;
-            }
-
-            std::cout << msg << std::endl;
-            auto* s_msg = new std::string(msg);
-            sendData(s_msg);
-            }, nullptr);
+    stop_loop();
 
 }
 
-gboolean set_clipboard(std::string* msg){
-    isSet = true;
+void wait_text(char* text){
+    if(text == nullptr){
+        return;
+    }
 
-    std::cout << g_utf8_validate(msg->c_str(),-1, nullptr) << msg->c_str() << std::endl;
-    gdk_clipboard_set_text(clipboard, msg->c_str());
+    std::cout << text << std::endl;
+    std::string s_msg(text);
+    sendData(s_msg);
+    free(text);
+}
+
+bool set_clipboard(std::string& msg){
+    put_to_clipboard(msg.c_str());
 
 #ifdef NOTIFY
-    NotifyNotification *notify;
-
-    if(msg->length() > NOTIFY_MSG_LEN){
+    GNotification* notify = g_notification_new (clients[0].name.c_str());
+    if(msg.length() > NOTIFY_MSG_LEN){
         std::string short_msg(NOTIFY_MSG_LEN, '.');
-        memcpy(short_msg.data(),msg->data(),NOTIFY_MSG_LEN - 3);
-        notify = notify_notification_new(clients[0].name.data(), short_msg.data(), "clipit-trayicon");
+        memcpy(short_msg.data(),msg.data(),NOTIFY_MSG_LEN - 3);
+        g_notification_set_body(notify,short_msg.c_str());
     }else{
-        notify = notify_notification_new(clients[0].name.data(), msg->data(),"clipit-trayicon");
+        g_notification_set_body(notify,msg.c_str());
     }
 
-    GError* err = nullptr;
-
-    notify_notification_show(notify,&err);
-
-    g_object_unref(notify);
+    g_application_send_notification(app,"firefox",notify);
 #endif
-
-    delete msg;
-
     return false;
 }
 
@@ -132,7 +97,7 @@ void load_config(std::string file){
 
 }
 
-void sendData(std::string* msg){
+void sendData(std::string& msg){
     if(client_is_connected()){
         sendData_client(msg);
     }
@@ -140,12 +105,10 @@ void sendData(std::string* msg){
     if(server_is_connected()){
         sendData_server(msg);
     }
-
-    delete msg;
 }
 
-void callback(std::string* msg){
-    g_idle_add(G_SOURCE_FUNC(set_clipboard),msg);
+void callback(std::string msg){
+    set_clipboard(msg);
 }
 
 std::string get_default_path(){
@@ -175,25 +138,22 @@ int main(int argc, char** argv)
     signal(SIGTERM,signalHandle);
 	signal(SIGINT,signalHandle);
 
-    notify_init("shared clipboard");
-    gtk_init();
-    GMainLoop* loop = g_main_loop_new (NULL, FALSE);
-
-    GdkDisplay* display = gdk_display_get_default();
-
-    clipboard = gdk_display_get_clipboard(display);
-//    gdk_display_get_primary_clipboard()
-
+#ifdef NOTIFY
+    app = g_application_new("org.txt.test", G_APPLICATION_IS_SERVICE);
+    g_application_register(app,NULL,NULL);
+#endif
 
     init_client(clients[0].ip,clients[0].port,callback);
     init_server(port, callback);
 
-    g_signal_connect(clipboard,"changed",G_CALLBACK(wait_text),NULL);
+    clip_board_init();
 
-//    set_clipboard(new std::string("test"));
-//    g_idle_add(G_SOURCE_FUNC(set_clipboard),new std::string("test"));
+    clipboard_notify_loop(wait_text);
 
-    g_main_loop_run(loop);
+    std::cout << "exit" << std::endl;
 
+#ifdef NOTIFY
+    g_object_unref(app);
+#endif
     return 0;
 }

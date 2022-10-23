@@ -11,7 +11,7 @@
 
 static const auto LogPrinter = [](const std::string& strLogMsg) { std::cout << strLogMsg << std::endl; };
 
-static void (*callback)(std::string*);
+static void (*callback)(std::string);
 
 static CTCPClient* client = nullptr;
 
@@ -34,14 +34,9 @@ void listenServer(){
             break;
         }
 
-        std::string *msg = nullptr;
-        try {
-            msg = new std::string(size + 1, ' ');
-        }catch(std::exception& e){
-            break;
-        }
-
-        client->Receive(msg->data(),size);
+        std::string msg(size + 1, ' ');
+        client->Receive(msg.data(),size);
+        std::cout << msg << std::endl;
 
         callback(msg);
     }
@@ -59,18 +54,18 @@ void disconnect_client(){
     }
 }
 
-void sendData_client(std::string* msg){
+void sendData_client(std::string msg){
     if(isConnected){
 
-        int size = msg->size();
+        int size = msg.size();
 
         client->Send((char*) &size, sizeof(int));
-        client->Send((char*) msg->data());
+        client->Send((char*) msg.data());
     }
 }
 
 
-bool init_client(std::string ip, std::string port, void (*_callback)(std::string*)){
+bool init_client(std::string ip, std::string port, void (*_callback)(std::string)){
     callback = _callback;
 
     client = new CTCPClient(LogPrinter);

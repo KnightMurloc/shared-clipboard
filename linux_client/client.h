@@ -7,9 +7,9 @@
 
 #include <string>
 
-bool init_client(std::string ip, std::string port, void (*_callback)(std::string*));
+bool init_client(std::string ip, std::string port, void (*_callback)(std::string));
 bool client_is_connected();
-void sendData_client(std::string* msg);
+void sendData_client(std::string msg);
 void disconnect_client();
 
 #endif //S_CLIPBOARD_CLIENT_H

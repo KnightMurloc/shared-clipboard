@@ -3,29 +3,28 @@ project(s_clipboard)
 
 set(NOTIFY on)
 
-
-find_package(PkgConfig REQUIRED)
-PKG_CHECK_MODULES(GTK4 REQUIRED gtk4)
-INCLUDE_DIRECTORIES(${GTK4_INCLUDE_DIRS})
-LINK_DIRECTORIES(${GTK4_LIBRARY_DIRS})
-ADD_DEFINITIONS(${GTK4_CFLAGS_OTHER})
-
 set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../socket-cpp socket-cpp)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../json/ json)
+#add_subdirectory(xclipboard)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(deps REQUIRED IMPORTED_TARGET gio-2.0)
 
 if(NOTIFY)
-    find_library(NOTIFY_LIBRARY notify)
+#    find_library(NOTIFY_LIBRARY notify)
     add_definitions(-DNOTIFY)
 endif()
 
 include_directories(../socket-cpp/Socket)
 include_directories(../json/include)
 
-add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h)
-target_link_libraries(${PROJECT_NAME} ${GTK4_LIBRARIES} pthread socket ${NOTIFY_LIBRARY})
+#set(CMAKE_CXX_FLAGS "-v")
 
-if(NOTIFY)
-	target_link_libraries(${PROJECT_NAME} ${NOTIFY_LIBRARY})
-endif()
+add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h clipboard.cpp clipboard.h)
+target_link_libraries(${PROJECT_NAME}  PkgConfig::deps pthread socket X11 Xfixes)
+
+#if(NOTIFY)
+#	target_link_libraries(${PROJECT_NAME} ${NOTIFY_LIBRARY})
+#endif()
