@@ -24,6 +24,7 @@ typedef struct {
 
 GdkClipboard *clipboard;
 bool isSet = false;
+bool wait_lock = false;
 
 std::string port;
 std::vector<Client> clients;
@@ -41,12 +42,6 @@ void signalHandle(int sig){
 }
 
 void wait_text(GdkClipboard* clipboard, gpointer userdata){
-
-    if(isSet){
-        isSet = false;
-        return;
-    }
-
     GdkContentFormats* format = gdk_clipboard_get_formats(clipboard);
 
     const GType* type = gdk_content_formats_get_gtypes(format, nullptr); 
@@ -54,6 +49,17 @@ void wait_text(GdkClipboard* clipboard, gpointer userdata){
     if(type == nullptr || type[0] != G_TYPE_STRING){
         return;
     }
+
+    if(isSet){
+        isSet = false;
+        return;
+    }
+
+    if(wait_lock){
+        wait_lock = false;
+        return;
+    }
+    wait_lock = true;
 
     gdk_clipboard_read_text_async(clipboard, nullptr, [](GObject* source_object, GAsyncResult* res, gpointer user_data){
             GError* err = nullptr;
@@ -69,10 +75,12 @@ void wait_text(GdkClipboard* clipboard, gpointer userdata){
             }, nullptr);
 
 }
-gboolean set_clipboard(std::string* msg){
 
+gboolean set_clipboard(std::string* msg){
     isSet = true;
-    gdk_clipboard_set_text(clipboard, msg->data());
+
+    std::cout << g_utf8_validate(msg->c_str(),-1, nullptr) << msg->c_str() << std::endl;
+    gdk_clipboard_set_text(clipboard, msg->c_str());
 
 #ifdef NOTIFY
     NotifyNotification *notify;
@@ -173,12 +181,17 @@ int main(int argc, char** argv)
 
     GdkDisplay* display = gdk_display_get_default();
 
-    clipboard = gdk_display_get_clipboard(display);    
+    clipboard = gdk_display_get_clipboard(display);
+//    gdk_display_get_primary_clipboard()
+
 
     init_client(clients[0].ip,clients[0].port,callback);
     init_server(port, callback);
 
     g_signal_connect(clipboard,"changed",G_CALLBACK(wait_text),NULL);
+
+//    set_clipboard(new std::string("test"));
+//    g_idle_add(G_SOURCE_FUNC(set_clipboard),new std::string("test"));
 
     g_main_loop_run(loop);
 

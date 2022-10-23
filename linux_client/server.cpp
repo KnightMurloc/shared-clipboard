@@ -44,7 +44,7 @@ void listenClients(){
         int size;
 
         int ret = server->Receive(client,(char*) &size, sizeof(int));
-//        std::cout << ret << std::endl;
+        std::cout << ret << std::endl;
         if(size == -1 || ret == 0){
             break;
         }

@@ -26,7 +26,6 @@ void listenServer(){
     while(true){
         int size;
         int ret = client->Receive((char*) &size, sizeof(int));
-
         if(ret == 0){
             break;
         }
@@ -43,8 +42,6 @@ void listenServer(){
         }
 
         client->Receive(msg->data(),size);
-
-        std::cout << msg << std::endl;
 
         callback(msg);
     }
@@ -86,7 +83,7 @@ bool init_client(std::string ip, std::string port, void (*_callback)(std::string
 
         return false;
     }
-
+    printf("connected\n");
     std::thread(listenServer).detach();
 
     return true;
