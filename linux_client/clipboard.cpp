@@ -14,6 +14,7 @@
 
 static Display* display;
 static Window win;
+static char* current_text = nullptr;
 
 int clip_board_init(){
 
@@ -23,7 +24,7 @@ int clip_board_init(){
     Window root = XDefaultRootWindow(display);
 
     win = XCreateSimpleWindow(display, root, -1, -1, 1, 1, 0, 0, 0);
-
+    XInitThreads();
     Atom sel = XInternAtom(display, "CLIPBOARD", False);
     Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
 
@@ -108,42 +109,14 @@ char* get_from_clipboard(){
     }
 }
 
-static void XCopy(Atom selection, unsigned char * text, int size) {
-    Atom targets_atom = XInternAtom(display, "TARGETS", 0);
-    Atom text_atom = XInternAtom(display, "TEXT", 0);
-    Atom UTF8 = XInternAtom(display, "UTF8_STRING", 1);
-
-    XEvent event;
-    XSetSelectionOwner (display, selection, win, 0);
-    if (XGetSelectionOwner (display, selection) != win) return;
-    while (1) {
-        XNextEvent (display, &event);
-        switch (event.type) {
-            case SelectionClear:
-                return;
-            case SelectionRequest:
-                if (event.xselectionrequest.selection != selection) break;
-                XSelectionRequestEvent * xsr = &event.xselectionrequest;
-                XSelectionEvent ev = {0};
-                int R = 0;
-                ev.type = SelectionNotify, ev.display = xsr->display, ev.requestor = xsr->requestor,
-                ev.selection = xsr->selection, ev.time = xsr->time, ev.target = xsr->target, ev.property = xsr->property;
-                if (ev.target == targets_atom) R = XChangeProperty (ev.display, ev.requestor, ev.property, XA_ATOM, 32,
-                                                                    PropModeReplace, (unsigned char*)&UTF8, 1);
-                else if (ev.target == XA_STRING || ev.target == text_atom)
-                    R = XChangeProperty(ev.display, ev.requestor, ev.property, XA_STRING, 8, PropModeReplace, text, size);
-                else if (ev.target == UTF8)
-                    R = XChangeProperty(ev.display, ev.requestor, ev.property, UTF8, 8, PropModeReplace, text, size);
-                else ev.property = None;
-                if ((R & 2) == 0) XSendEvent (display, ev.requestor, 0, 0, (XEvent *)&ev);
-                break;
-        }
-    }
-}
-
 void put_to_clipboard(const char* text){
     Atom clip = XInternAtom(display, "CLIPBOARD", False);
-    XCopy(clip,(unsigned char*) text,(int) strlen(text));
+    free(current_text);
+    current_text = strdup(text);
+    XSetSelectionOwner (display, clip, win, 0);
+    if (XGetSelectionOwner (display, clip) != win){
+        printf("error\n");
+    }
 }
 
 void clipboard_notify_loop(void(*callback)(char* text)){
@@ -151,6 +124,8 @@ void clipboard_notify_loop(void(*callback)(char* text)){
     Atom sel = XInternAtom(display, "CLIPBOARD", False);
     Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
     Atom clip = XInternAtom(display, "CLIPBOARD", False);
+    Atom targets_atom = XInternAtom(display, "TARGETS", 0);
+    Atom text_atom = XInternAtom(display, "TEXT", 0);
     XEvent event;
 
     XFixesSelectSelectionInput(display, win, clip, XFixesSetSelectionOwnerNotifyMask);
@@ -164,6 +139,7 @@ void clipboard_notify_loop(void(*callback)(char* text)){
     while (1){
 
         XNextEvent(display,&event);
+        printf("%d\n", event.type);
         if(event.type == 87){
             XSelectionEvent e = event.xselection;
             Atom owner = XGetSelectionOwner(display,clip);
@@ -180,7 +156,8 @@ void clipboard_notify_loop(void(*callback)(char* text)){
                 error = 0;
                 char* text = show_utf8_prop(display, win, target_property,&error);
                 if(error == 0 && text){
-                    if(last_text == NULL || (strcmp(text,last_text) != 0 && owner != last_owner)){
+                    printf("%s\n", text);
+                    if((last_text == NULL || (strcmp(text,last_text) != 0) && owner != win)){
                         free(last_text);
                         last_text = strdup(text);
                         callback(text);
@@ -189,6 +166,25 @@ void clipboard_notify_loop(void(*callback)(char* text)){
                     }
                 }
             }
+        }
+
+        if(event.type == SelectionRequest){
+            if (event.xselectionrequest.selection != sel) continue;
+            XSelectionRequestEvent * xsr = &event.xselectionrequest;
+            XSelectionEvent ev = {0};
+            int R = 0;
+            ev.type = SelectionNotify, ev.display = xsr->display, ev.requestor = xsr->requestor,
+            ev.selection = xsr->selection, ev.time = xsr->time, ev.target = xsr->target, ev.property = xsr->property;
+            if (ev.target == targets_atom) R = XChangeProperty (ev.display, ev.requestor, ev.property, XA_ATOM, 32,
+                                                                PropModeReplace, (unsigned char*)&utf8, 1);
+            else if (ev.target == XA_STRING || ev.target == text_atom)
+                R = XChangeProperty(ev.display, ev.requestor, ev.property, XA_STRING, 8, PropModeReplace,
+                                    reinterpret_cast<const unsigned char*>(current_text), strlen(current_text));
+            else if (ev.target == utf8)
+                R = XChangeProperty(ev.display, ev.requestor, ev.property, utf8, 8, PropModeReplace,
+                                    reinterpret_cast<const unsigned char*>(current_text), strlen(current_text));
+            else ev.property = None;
+            if ((R & 2) == 0) XSendEvent (display, ev.requestor, 0, 0, (XEvent *)&ev);
         }
 
         if(event.type == Expose){

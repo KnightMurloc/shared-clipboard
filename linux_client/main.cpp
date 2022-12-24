@@ -108,6 +108,7 @@ void sendData(std::string& msg){
 }
 
 void callback(std::string msg){
+    std::cout << msg << std::endl;
     set_clipboard(msg);
 }
 
@@ -135,8 +136,8 @@ int main(int argc, char** argv)
 
     load_config(config_file);
 
-    signal(SIGTERM,signalHandle);
-	signal(SIGINT,signalHandle);
+//    signal(SIGTERM,signalHandle);
+//	signal(SIGINT,signalHandle);
 
 #ifdef NOTIFY
     app = g_application_new("org.txt.test", G_APPLICATION_IS_SERVICE);
