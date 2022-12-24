@@ -4,8 +4,9 @@ shared clipboard between PC.
 warning: the data is currently being transmitted without encryption.
 
 linux dependencies:
-  gtk-4
-  libnotify (optional)
+  Xlib
+  Xfixes
+  gio-2
 
 default config path:
   linux: /home/${USER}/.config/shared clipboard/config.json
