@@ -65,7 +65,7 @@ bool set_clipboard(std::string& msg){
         g_notification_set_body(notify,msg.c_str());
     }
 
-    g_application_send_notification(app,"firefox",notify);
+    g_application_send_notification(app,"s_clipboard",notify);
 #endif
     return false;
 }

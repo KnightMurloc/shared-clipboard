@@ -34,7 +34,7 @@ void listenServer(){
             break;
         }
 
-        std::string msg(size + 1, ' ');
+        std::string msg(size + 1, '\0');
         client->Receive(msg.data(),size);
         std::cout << msg << std::endl;
 
