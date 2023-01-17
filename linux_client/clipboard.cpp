@@ -3,94 +3,27 @@
 //
 
 #include "clipboard.h"
-
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
+#include <cstdio>
+#include <cstring>
+#include <algorithm>
 #include <X11/Xatom.h>
-#include <stdio.h>
+#include <string>
+#include <mutex>
 
-#include <string.h>
-#include <stdlib.h>
-
-static Display* display;
+static std::map<Atom,std::vector<char>> targets_map;
+static std::vector<Atom> keys;
 static Window win;
-static char* current_text = nullptr;
-static int text_size = 0;
-static int accept = 0;
+static Display* disp;
 
-int clip_board_init(){
+static std::mutex mtx;
 
-    display = XOpenDisplay(NULL);
-    XInitThreads();
-
-    Window root = XDefaultRootWindow(display);
-
-    win = XCreateSimpleWindow(display, root, -1, -1, 1, 1, 0, 0, 0);
-    XInitThreads();
-//    Atom sel = XInternAtom(display, "CLIPBOARD", False);
-//    Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
-
-//    Atom target_property = XInternAtom(display, "BUFFER", False);
-
-//    XConvertSelection(display, sel, utf8, target_property, win, CurrentTime);
-
-    return 1;
-}
-
-char* show_utf8_prop(Display *dpy, Window w, Atom p, int* error)
-{
-    Atom da, incr, type;
-    int di;
-    unsigned long size, dul;
-    unsigned char *prop_ret = NULL;
-
-    /* Dummy call to get type and size. */
-    XGetWindowProperty(dpy, w, p, 0, 0, False, AnyPropertyType,
-                       &type, &di, &dul, &size, &prop_ret);
-    printf("size: %ld\n",size);
-    XFree(prop_ret);
-
-    incr = XInternAtom(dpy, "INCR", False);
-    if (type == incr)
-    {
-        *error = 1;
-        printf("Data too large and INCR mechanism not implemented\n");
-    }
-//    printf("type: %s\n", XGetAtomName(dpy,type));
-    /* Read the data in one go. */
-    XGetWindowProperty(dpy, w, p, 0, size, False, AnyPropertyType,
-                       &da, &di, &dul, &dul, &prop_ret);
-
-    char* result = NULL;
-    if(prop_ret) {
-        result = strdup((char*) prop_ret);
-        *error = 0;
-        text_size = size;
-        XFree(prop_ret);
-    }
-
-    if(result == NULL){
-        *error = 2;
-    }
-
-    if(size == 0){
-        *error = 3;
-    }
-
-    /* Signal the selection owner that we have successfully read the
-     * data. */
-    XDeleteProperty(dpy, w, p);
-    return result;
-}
-
-void
-show_targets(Display *dpy, Window w, Atom p)
-{
+void get_targets(Display *dpy, Window w, Atom p){
     Atom type, *targets;
     int di;
     unsigned long i, nitems, dul;
-    unsigned char *prop_ret = NULL;
-    char *an = NULL;
+    unsigned char *prop_ret = nullptr;
+    char *an = nullptr;
 
     /* Read the first 1024 atoms from this list of atoms. We don't
      * expect the selection owner to be able to convert to more than
@@ -104,12 +37,10 @@ show_targets(Display *dpy, Window w, Atom p)
     {
         an = XGetAtomName(dpy, targets[i]);
         printf("    '%s'\n", an);
-//        if(an && strcmp(an,"UTF8_STRING") == 0){
-//            XConvertSelection(dpy,XInternAtom(dpy,"CLIPBOARD",False),targets[i],p,w,CurrentTime);
-//            accept = 1;
-//            XFree(an);
-//            break;
-//        }
+
+        if(std::strcmp(an,"TARGETS") != 0){
+            targets_map.insert(make_pair(targets[i],std::vector<char>()));
+        }
         if (an)
             XFree(an);
     }
@@ -118,168 +49,164 @@ show_targets(Display *dpy, Window w, Atom p)
     XDeleteProperty(dpy, w, p);
 }
 
-char* get_from_clipboard(){
-    XEvent ev;
-    XSelectionEvent* sev;
-    Atom target_property = XInternAtom(display, "BUFFER", False);
-    Atom sel = XInternAtom(display, "CLIPBOARD", False);
-    Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
-    for (;;)
+std::vector<char> get_prop(Display *dpy, Window w, Atom p){
+
+    std::vector<char> result;
+    bool is_incr = false;
+    begin:
+    Atom da, incr, type;
+    int di;
+    unsigned long size, dul;
+    unsigned char *prop_ret = NULL;
+
+    /* Dummy call to get type and size. */
+    XGetWindowProperty(dpy, w, p, 0, 0, False, AnyPropertyType,
+                       &type, &di, &dul, &size, &prop_ret);
+    XFree(prop_ret);
+
+    incr = XInternAtom(dpy, "INCR", False);
+    if (type == incr)
     {
-        XNextEvent(display, &ev);
-        switch (ev.type)
-        {
-            case SelectionNotify:
-                sev = (XSelectionEvent*)&ev.xselection;
-                XConvertSelection(display, sel, utf8, target_property, win, CurrentTime);
-                if (sev->property == None)
-                {
-                    return NULL;
-                }
-                else
-                {
-                    int error = 0;
-                    char* tmp =show_utf8_prop(display, win, target_property,&error);
-                    if(error == 0){
-                        return tmp;
-                    }
-                }
-        }
+        is_incr = true;
+        printf("using incr\n");
     }
+
+    /* Read the data in one go. */
+    XGetWindowProperty(dpy, w, p, 0, size, False, AnyPropertyType,
+                       &da, &di, &dul, &dul, &prop_ret);
+
+    std::vector<char> part;
+    if(prop_ret && type != incr) {
+
+        part.resize(size);
+        std::memcpy(part.data(),prop_ret,size);
+
+        result.insert(result.end(),part.begin(),part.end());
+
+        XFree(prop_ret);
+    }
+
+    if(size != 0 && is_incr){
+        XDeleteProperty(dpy, w, p);
+        XEvent event;
+        do{
+            XNextEvent(disp,&event);
+
+        }while(event.type != PropertyNotify || event.xproperty.atom != p || event.xproperty.state != PropertyNewValue);
+        goto begin;
+    }
+
+    XDeleteProperty(dpy, w, p);
+
+    return result;
 }
 
-void put_to_clipboard(const char* text){
-    Atom clip = XInternAtom(display, "CLIPBOARD", False);
-    free(current_text);
-    current_text = strdup(text);
-    XSetSelectionOwner (display, clip, win, 0);
-    if (XGetSelectionOwner (display, clip) != win){
-        printf("error\n");
-    }
-}
+void clipboard_notify_loop(void(*callback)(const std::map<Atom, std::vector<char>>&)){
+    disp = XOpenDisplay(nullptr);
+    Window root = XDefaultRootWindow(disp);
+    win = XCreateSimpleWindow(disp, root, -1, -1, 1, 1, 0, 0, 0);
+    Atom clip = XInternAtom(disp, "CLIPBOARD", False);
+    Atom target_property = XInternAtom(disp, "BUFFER", False);
+    Atom targets_atom = XInternAtom(disp, "TARGETS", False);
 
+    XSelectInput(disp,win,PropertyChangeMask | ExposureMask);
+    XSetSelectionOwner(disp,clip,win,CurrentTime);
 
-
-void clipboard_notify_loop(void(*callback)(char* text)){
-    Atom target_property = XInternAtom(display, "BUFFER", False);
-    Atom sel = XInternAtom(display, "CLIPBOARD", False);
-    Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
-    Atom image = XInternAtom(display, "image/png", False);
-    Atom clip = XInternAtom(display, "CLIPBOARD", False);
-    Atom targets_atom = XInternAtom(display, "TARGETS", 0);
-    Atom text_atom = XInternAtom(display, "TEXT", 0);
     XEvent event;
 
-//    XFixesSelectSelectionInput(display, win, clip, XFixesSetSelectionOwnerNotifyMask);
+    bool target_req = false;
 
-//    char* last_text = get_from_clipboard();
-//    Atom last_owner = XGetSelectionOwner(display,clip);
-    int error = 0;
-    int lost = 0;
-    XSelectInput(display,win,ExposureMask);
-    XSetSelectionOwner(display,clip,win,CurrentTime);
-//    XConvertSelection(display, clip, targets_atom, target_property, win, CurrentTime);
-    while (1){
-
-        XNextEvent(display,&event);
-        printf("event.type: %d\n",event.type);
+    auto targets = targets_map.end();
+    while (true){
+        XNextEvent(disp,&event);
+        mtx.lock();
         if(event.type == SelectionClear){
-            printf("lost\n");
-            lost = 1;
-            XConvertSelection(display, clip, utf8, target_property, win, CurrentTime);
+
+            XConvertSelection(disp, clip, targets_atom, target_property, win, CurrentTime);
+            target_req = true;
+            targets_map.clear();
         }
 
-        if(event.type == SelectionNotify && lost){
-//            free(current_text);
-            current_text = show_utf8_prop(display,win,target_property,&error);
-//            printf("text: %s\n",current_text ? current_text : "(null)");
-            if(error){
-                printf("send new req\n");
-                XConvertSelection(display, clip, image, target_property, win, CurrentTime);
-                continue;
+        if(event.type == SelectionNotify && target_req){
+            target_req = false;
+            get_targets(disp,win,target_property);
+            targets = targets_map.begin();
+            if(targets != targets_map.end()){
+                XConvertSelection(disp, clip, (*targets).first, target_property, win, CurrentTime);
             }
-//            if(error == 4){
-//                continue;
-//            }else{
-//                printf("text: %s\n",current_text ? current_text : "(null)");
-//            }
-            printf("text: %s\n",current_text ? current_text : "(null)");
-            lost = 0;
-//            show_targets(display,win,target_property);
-            XSetSelectionOwner(display,clip,win,CurrentTime);
+            mtx.unlock();
+            continue;
         }
 
-//        if(event.type == SelectionNotify && accept){
-//            accept = 0;
-//            current_text = show_utf8_prop(display,win,target_property,&error);
-//            printf("text: %s\n",current_text ? current_text : "(null)");
-//
-//        }
-
-//        printf("%d\n", event.type);
-//        if(event.type == 87){
-//            XSelectionEvent e = event.xselection;
-//            Atom owner = XGetSelectionOwner(display,clip);
-//
-//            XConvertSelection(display, sel, utf8, target_property, win, CurrentTime);
-//            if (e.property == None)
-//            {
-//                free(last_text);
-//                last_text = NULL;
-//                printf("Conversion could not be performed.\n");
-//            }
-//            else
-//            {
-//                error = 0;
-//                char* text = show_utf8_prop(display, win, target_property,&error);
-//                printf("%s\n", text ? text : "(null)");
-//                if(error == 0 && text){
-//                    if((last_text == NULL || (strcmp(text,last_text) != 0) && owner != win)){
-//                        free(last_text);
-//                        last_text = strdup(text);
-//                        callback(text);
-//                    }else{
-//                        free(text);
-//                    }
-//                }
-//            }
-//        }
+        if(event.type == SelectionNotify && !targets_map.empty() && targets != targets_map.end()){
+            auto& target = *targets;
+            target.second = get_prop(disp,win,target_property);
+            targets++;
+            if(targets != targets_map.end()){
+                XConvertSelection(disp, clip, (*targets).first, target_property, win, CurrentTime);
+            }else{
+                keys.clear();
+                for(const auto& t : targets_map){
+                    keys.push_back(t.first);
+                }
+                XSetSelectionOwner(disp,clip,win,CurrentTime);
+                callback(targets_map);
+            }
+        }
 
         if(event.type == SelectionRequest){
-            if (event.xselectionrequest.selection != sel) continue;
+            if (event.xselectionrequest.selection != clip) continue;
             XSelectionRequestEvent * xsr = &event.xselectionrequest;
             XSelectionEvent ev = {0};
             int R = 0;
             ev.type = SelectionNotify, ev.display = xsr->display, ev.requestor = xsr->requestor,
             ev.selection = xsr->selection, ev.time = xsr->time, ev.target = xsr->target, ev.property = xsr->property;
-            printf("target: %s\n",XGetAtomName(display,ev.target));
+            printf("target: %s\n", XGetAtomName(disp,ev.target));
             if (ev.target == targets_atom) R = XChangeProperty (ev.display, ev.requestor, ev.property, XA_ATOM, 32,
-                                                                PropModeReplace, (unsigned char*)&utf8, 1);
-            else if (ev.target == XA_STRING || ev.target == text_atom)
-                R = XChangeProperty(ev.display, ev.requestor, ev.property, XA_STRING, 8, PropModeReplace,
-                                    reinterpret_cast<const unsigned char*>(current_text), strlen(current_text));
-            else if (ev.target == utf8)
-                R = XChangeProperty(ev.display, ev.requestor, ev.property, utf8, 8, PropModeReplace,
-                                    reinterpret_cast<const unsigned char*>(current_text), strlen(current_text));
-            else if (ev.target == image)
-                R = XChangeProperty(ev.display,ev.requestor,ev.property,image,8,PropModeReplace,
-                        reinterpret_cast<const unsigned char*>(current_text),text_size);
-            else ev.property = None;
-            if ((R & 2) == 0) XSendEvent (display, ev.requestor, 0, 0, (XEvent *)&ev);
-        }
+                                                                PropModeReplace, (unsigned char*)keys.data(), keys.size());
+            else if(std::find(keys.begin(),keys.end(),ev.target) != keys.end()){
+                auto data = targets_map[ev.target];
+                R = XChangeProperty(ev.display, ev.requestor, ev.property, ev.target, 8, PropModeReplace,
+                                    (unsigned char*) data.data(), data.size());
+            }else{
+                ev.property = None;
+            }
 
-        if(event.type == Expose){
+            if ((R & 2) == 0) XSendEvent (disp, ev.requestor, 0, 0, (XEvent *)&ev);
+        }
+        mtx.unlock();
+        if (event.type == Expose){
             break;
         }
     }
-
-//    free(last_text);
 }
 
 void stop_loop(){
     XEvent event;
     event.type = Expose;
 
-    XSendEvent(display,win,False,ExposureMask,&event);
-    XFlush(display);
+    XSendEvent(disp,win,False,ExposureMask,&event);
+    XFlush(disp);
+}
+
+std::string get_atom_name(Atom atom){
+    char* name_x = XGetAtomName(disp,atom);
+    std::string result(name_x);
+    XFree(name_x);
+    return result;
+}
+
+Atom get_atom_by_name(std::string_view name){
+    return XInternAtom(disp,name.data(),False);
+}
+
+void put_to_clipboard(const std::map<Atom, std::vector<char>>& data){
+    mtx.lock();
+    targets_map = data;
+    keys.clear();
+    for(const auto& t : targets_map){
+        printf("atom: %s\n", XGetAtomName(disp,t.first));
+        keys.push_back(t.first);
+    }
+    mtx.unlock();
 }

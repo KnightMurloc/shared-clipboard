@@ -6,12 +6,11 @@
 #include "client.h"
 #include <TCPClient.h>
 #include <thread>
-#include <codecvt>
-#include <locale>
+#include <map>
 
 static const auto LogPrinter = [](const std::string& strLogMsg) { std::cout << strLogMsg << std::endl; };
 
-static void (*callback)(std::string);
+static void (*callback)(const std::map<std::string, std::vector<char>>& data);
 
 static CTCPClient* client = nullptr;
 
@@ -24,21 +23,29 @@ bool client_is_connected(){
 
 void listenServer(){
     while(true){
-        int size;
-        int ret = client->Receive((char*) &size, sizeof(int));
-        if(ret == 0){
+        int data_size;
+        int ret = client->Receive((char*) &data_size, sizeof(int));
+
+        if(ret == 0 || ret == -1){
             break;
         }
 
-        if(size == -1){
-            break;
+        std::map<std::string, std::vector<char>> data;
+        for(int i = 0; i < data_size; i++){
+            int size;
+            client->Receive((char*) &size,sizeof(int));
+            std::string name(size,'\0');
+            client->Receive(name.data(),size);
+
+            client->Receive((char*) &size,sizeof(int));
+
+            std::vector<char> vec;
+            vec.resize(size);
+            client->Receive(vec.data(),size);
+
+            data.insert(std::make_pair(std::move(name),std::move(vec)));
         }
-
-        std::string msg(size + 1, '\0');
-        client->Receive(msg.data(),size);
-        std::cout << msg << std::endl;
-
-        callback(msg);
+        callback(data);
     }
 
     client->Disconnect();
@@ -54,18 +61,28 @@ void disconnect_client(){
     }
 }
 
-void sendData_client(std::string msg){
+void sendData_client(const std::map<std::string, std::vector<char>>& data){
     if(isConnected){
 
-        int size = msg.size();
+        int data_size = data.size();
 
-        client->Send((char*) &size, sizeof(int));
-        client->Send((char*) msg.data());
+        client->Send((char*) &data_size, sizeof(data_size));
+
+        for(const auto& entry : data){
+            int size = entry.first.size();
+
+            client->Send((char*) &size, sizeof(size));
+            client->Send((char*) entry.first.data(),size);
+
+            size = entry.second.size();
+            client->Send((char*) &size, sizeof(size));
+            client->Send(entry.second.data(), size);
+        }
     }
 }
 
 
-bool init_client(std::string ip, std::string port, void (*_callback)(std::string)){
+bool init_client(std::string ip, std::string port, void (*_callback)(const std::map<std::string, std::vector<char>>& data)){
     callback = _callback;
 
     client = new CTCPClient(LogPrinter);

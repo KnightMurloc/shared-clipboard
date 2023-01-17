@@ -12,7 +12,7 @@ include_directories(../socket-cpp/Socket)
 include_directories(../json/include)
 
 add_executable(${PROJECT_NAME} main.cpp server.cpp server.h client.cpp client.h clipboard.cpp clipboard.h)
-target_link_libraries(${PROJECT_NAME} pthread socket X11 Xfixes)
+target_link_libraries(${PROJECT_NAME} pthread socket X11)
 
 if(NOTIFY)
 		find_package(PkgConfig REQUIRED)

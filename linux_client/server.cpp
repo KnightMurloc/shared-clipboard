@@ -7,12 +7,11 @@
 #include <Socket.h>
 #include <thread>
 #include <iostream>
-#include <codecvt>
-#include <locale>
+#include <map>
 
 static auto LogPrinter = [](const std::string& strLogMsg) { std::cout << strLogMsg << std::endl; };
 
-static void (*callback)(std::string);
+static void (*callback)(const std::map<std::string, std::vector<char>>& data);
 
 static CTCPServer* server = nullptr;
 static ASocket::Socket client;
@@ -41,19 +40,30 @@ void listenClients(){
     printf("\nconnected\n");
 
     while(true){
-        int size;
+        int data_size;
+        int ret = server->Receive(client, (char*) &data_size, sizeof(int));
 
-        int ret = server->Receive(client,(char*) &size, sizeof(int));
-//        std::cout << ret << std::endl;
-        if(size == -1 || ret == 0){
+        if(ret == 0 || ret == -1){
             break;
         }
 
-        std::string msg(size + 1, '\0');
-        server->Receive(client,(char*) msg.data(),size);
+        std::map<std::string, std::vector<char>> data;
+        for(int i = 0; i < data_size; i++){
+            int size;
+            server->Receive(client, (char*) &size,sizeof(int));
+            std::string name(size,'\0');
+            server->Receive(client, name.data(),size);
 
+            server->Receive(client, (char*) &size,sizeof(int));
 
-        callback(msg);
+            std::vector<char> vec;
+            vec.resize(size);
+            server->Receive(client, vec.data(),size);
+
+            data.insert(std::make_pair(std::move(name),std::move(vec)));
+        }
+
+        callback(data);
     }
 
     if(!isShutDown){
@@ -66,17 +76,28 @@ void listenClients(){
     server->Disconnect(client);
 }
 
-void sendData_server(std::string msg){
+void sendData_server(const std::map<std::string, std::vector<char>>& data){
     if(isConnected){
 
-        int size = msg.size();
+        int data_size = data.size();
 
-        server->Send(client,(char*) &size, sizeof(int));
-        server->Send(client,(char*) msg.data());
+        server->Send(client, (char*) &data_size, sizeof(data_size));
+
+        for(const auto& entry : data){
+            int size = entry.first.size();
+            std::cout << entry.first << std::endl;
+            server->Send(client, (char*) &size, sizeof(size));
+            server->Send(client, (char*) entry.first.data(), size);
+
+            size = entry.second.size();
+
+            server->Send(client, (char*) &size, sizeof(size));
+            server->Send(client, entry.second.data(), size);
+        }
     }
 }
 
-bool init_server(std::string port, void (*_callback)(std::string)){
+bool init_server(std::string port, void (*_callback)(const std::map<std::string, std::vector<char>>& data)){
 
     server = new CTCPServer(LogPrinter,port);
 

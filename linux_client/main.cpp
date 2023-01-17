@@ -28,7 +28,7 @@ std::vector<Client> clients;
 #ifdef NOTIFY
 GApplication* app;
 #endif
-void sendData(std::string& msg);
+void sendData(const std::map<Atom,std::vector<char>>& data);
 
 void signalHandle(int sig){
 
@@ -41,31 +41,31 @@ void signalHandle(int sig){
 
 }
 
-void wait_text(char* text){
-    if(text == nullptr){
-        return;
-    }
-
-    std::cout << text << std::endl;
-    std::string s_msg(text);
-    sendData(s_msg);
-    free(text);
+void wait_text(const std::map<Atom,std::vector<char>>& data){
+    sendData(data);
 }
 
-bool set_clipboard(std::string& msg){
-    put_to_clipboard(msg.c_str());
+bool set_clipboard(const std::map<std::string, std::vector<char>>& data){
+//    put_to_clipboard(msg.c_str());
 
-#ifdef NOTIFY
-    GNotification* notify = g_notification_new (clients[0].name.c_str());
-    if(msg.length() > NOTIFY_MSG_LEN){
-        std::string short_msg(NOTIFY_MSG_LEN, '.');
-        memcpy(short_msg.data(),msg.data(),NOTIFY_MSG_LEN - 3);
-        g_notification_set_body(notify,short_msg.c_str());
-    }else{
-        g_notification_set_body(notify,msg.c_str());
+    std::map<Atom, std::vector<char>> atom_data;
+
+    for(const auto& entry : data){
+        atom_data.insert(std::make_pair(get_atom_by_name(entry.first),entry.second));
     }
 
-    g_application_send_notification(app,"s_clipboard",notify);
+    put_to_clipboard(atom_data);
+#ifdef NOTIFY
+//    GNotification* notify = g_notification_new (clients[0].name.c_str());
+//    if(msg.length() > NOTIFY_MSG_LEN){
+//        std::string short_msg(NOTIFY_MSG_LEN, '.');
+//        memcpy(short_msg.data(),msg.data(),NOTIFY_MSG_LEN - 3);
+//        g_notification_set_body(notify,short_msg.c_str());
+//    }else{
+//        g_notification_set_body(notify,msg.c_str());
+//    }
+//
+//    g_application_send_notification(app,"s_clipboard",notify);
 #endif
     return false;
 }
@@ -97,19 +97,27 @@ void load_config(std::string file){
 
 }
 
-void sendData(std::string& msg){
+void sendData(const std::map<Atom,std::vector<char>>& data){
+
+    std::map<std::string,std::vector<char>> named_data;
+
+    for(const auto& entry : data){
+        auto name = get_atom_name(entry.first);
+        named_data.insert(std::make_pair(name,entry.second));
+    }
+
     if(client_is_connected()){
-        sendData_client(msg);
+
+        sendData_client(named_data);
     }
 
     if(server_is_connected()){
-        sendData_server(msg);
+        sendData_server(named_data);
     }
 }
 
-void callback(std::string msg){
-    std::cout << msg << std::endl;
-    set_clipboard(msg);
+void callback(const std::map<std::string, std::vector<char>>& data){
+    set_clipboard(data);
 }
 
 std::string get_default_path(){
@@ -147,7 +155,6 @@ int main(int argc, char** argv)
     init_client(clients[0].ip,clients[0].port,callback);
     init_server(port, callback);
 
-    clip_board_init();
 
     clipboard_notify_loop(wait_text);
 
